@@ -1,7 +1,12 @@
 import json
 import os
+import glob
+from typing import Set, List, Dict, Any, Optional
 
 class InstagramAnalytics:
+    """
+    Analisa dados de seguidores e seguidos do Instagram a partir de arquivos JSON.
+    """
     TEXTS = {
         'pt': {
             'analysis_title': "--- Análise do Instagram ---",
@@ -15,8 +20,9 @@ class InstagramAnalytics:
             'no_one_great_job': "  Ninguém. Ótimo trabalho!",
             'file_not_found_error': "Erro: O arquivo não foi encontrado em:",
             'json_decode_error': "Erro: O arquivo não é um JSON válido:",
-            'searching_files': "Procurando arquivos 'following.json' e 'followers_1.json'...",
-            'files_not_found_msg': "\nErro: Arquivos não encontrados.\nPor favor, certifique-se de que 'following.json' e 'followers_1.json' estão na mesma pasta do script ou em uma subpasta.",
+            'searching_files': "Procurando arquivos...", 
+            'files_not_found_msg': "\nErro: Arquivos não encontrados.\nPor favor, certifique-se de que 'following.json' e 'followers_*.json' estão na mesma pasta do script ou em uma subpasta.",
+            'files_found_msg': "Arquivos encontrados:",
             'language_prompt': "Escolha o idioma / Choose the language:",
             'invalid_option': "Opção inválida. Por favor, tente novamente. / Invalid option. Please try again."
         },
@@ -32,28 +38,27 @@ class InstagramAnalytics:
             'no_one_great_job': "  Nobody. Great job!",
             'file_not_found_error': "Error: File not found at:",
             'json_decode_error': "Error: File is not a valid JSON:",
-            'searching_files': "Searching for 'following.json' and 'followers_1.json' files...",
-            'files_not_found_msg': "\nError: Files not found.\nPlease make sure 'following.json' and 'followers_1.json' are in the same folder as the script, or in a subfolder.",
+            'searching_files': "Searching for files...", 
+            'files_not_found_msg': "\nError: Files not found.\nPlease make sure 'following.json' and 'followers_*.json' are in the same folder as the script, or in a subfolder.",
+            'files_found_msg': "Files found:",
             'language_prompt': "Choose the language / Escolha o idioma:",
             'invalid_option': "Opção inválida. Por favor, tente novamente. / Invalid option. Please try again."
         }
     }
 
-    def __init__(self, following_file, followers_file, language='en'):
+    def __init__(self, following_filepath: str, followers_filepaths: List[str], language: str = 'en'):
         self.lang = language if language in self.TEXTS else 'en'
-        self.texts = self.TEXTS[self.lang] 
+        self.texts = self.TEXTS[self.lang]
+        following_data = self._load_json(following_filepath)
+        followers_data = []
+        for file in followers_filepaths:
+            data = self._load_json(file)
+            if data:
+                followers_data.extend(data)
+        self.following_set = self._extract_usernames(following_data, "relationships_following")
+        self.followers_set = self._extract_usernames(followers_data)
 
-        self.following_data = self.load_json(following_file)
-        self.followers_data = self.load_json(followers_file)
-        
-        if self.following_data and self.followers_data:
-            self.following_set = self.extract_usernames(self.following_data, "relationships_following")
-            self.followers_set = self.extract_usernames(self.followers_data)
-        else:
-            self.following_set = set()
-            self.followers_set = set()
-
-    def load_json(self, file_path):
+    def _load_json(self, file_path: str) -> Optional[Any]:
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 return json.load(file)
@@ -64,102 +69,109 @@ class InstagramAnalytics:
             print(f"{self.texts['json_decode_error']} {file_path}")
             return None
 
-    def extract_usernames(self, data, key=None):
-        if data is None: return set()
+    def _extract_usernames(self, data: Optional[List[Dict]], key: Optional[str] = None) -> Set[str]:
+        if not data:
+            return set()
+        
         usernames = set()
         user_list = data.get(key, []) if key and isinstance(data, dict) else data if isinstance(data, list) else []
 
         for user_item in user_list:
-            username = None
             try:
                 username = user_item['string_list_data'][0]['value']
-            except (KeyError, IndexError):
+                usernames.add(username)
+            except (KeyError, IndexError, TypeError):
                 try:
                     username = user_item['title']
-                except KeyError:
+                    usernames.add(username)
+                except (KeyError, TypeError):
                     continue
-            if username:
-                usernames.add(username)
         return usernames
 
-    def count_following(self): return len(self.following_set)
-    def count_followers(self): return len(self.followers_set)
-    def count_mutual_follow(self): return len(self.following_set & self.followers_set)
-    def count_non_follow_back(self): return len(self.following_set - self.followers_set)
-    def count_not_following_back(self): return len(self.followers_set - self.following_set)
-    def list_non_follow_back(self): return sorted(list(self.following_set - self.followers_set))
+    def get_non_followers(self) -> List[str]:
+        return sorted(list(self.following_set - self.followers_set))
 
-    def print_analytics(self):
-        if not self.following_set and not self.followers_set:
-            return
+    def get_analytics_summary(self) -> Dict[str, int]:
+        return {
+            "following": len(self.following_set),
+            "followers": len(self.followers_set),
+            "mutual": len(self.following_set & self.followers_set),
+            "not_following_you_back": len(self.followers_set - self.following_set),
+            "non_followers": len(self.following_set - self.followers_set)
+        }
 
-        print(self.texts['analysis_title'])
-        print(f"{self.texts['following']:<25}: {self.count_following()}")
-        print(f"{self.texts['followers']:<25}: {self.count_followers()}")
-        print(f"{self.texts['mutuals']:<25}: {self.count_mutual_follow()}")
-        print(self.texts['separator'])
-        print(f"{self.texts['not_following_you_back']:<25}: {self.count_non_follow_back()}")
-        print(f"{self.texts['you_dont_follow_back']:<25}: {self.count_not_following_back()}")
+def print_report(analytics: InstagramAnalytics):
+    summary = analytics.get_analytics_summary()
+    texts = analytics.texts
+    
+    if not summary['following'] and not summary['followers']:
+        print(texts['files_not_found_msg'])
+        return
 
-        nao_seguem_de_volta = self.list_non_follow_back()
-        print(f"\n{self.texts['detailed_list_title']} ({len(nao_seguem_de_volta)}) ---")
+    print(f"\n{texts['analysis_title']}")
+    print(f"{texts['following']:<25}: {summary['following']}")
+    print(f"{texts['followers']:<25}: {summary['followers']}")
+    print(f"{texts['mutuals']:<25}: {summary['mutual']}")
+    print(texts['separator'])
+    print(f"{texts['not_following_you_back']:<25}: {summary['non_followers']}")
+    print(f"{texts['you_dont_follow_back']:<25}: {summary['not_following_you_back']}")
 
-        if nao_seguem_de_volta:
-            num_colunas = 3
-            try:
-                largura_coluna = max(len(nome) for nome in nao_seguem_de_volta) + 4
-            except ValueError:
-                largura_coluna = 20
+    non_followers_list = analytics.get_non_followers()
+    print(f"\n{texts['detailed_list_title']} ({len(non_followers_list)}) ---")
 
-            for i in range(0, len(nao_seguem_de_volta), num_colunas):
-                itens_linha = nao_seguem_de_volta[i:i + num_colunas]
-                linha_formatada = "".join(f"{item:<{largura_coluna}}" for item in itens_linha)
-                print(linha_formatada)
-        else:
-            print(self.texts['no_one_great_job'])
+    if non_followers_list:
+        num_columns = 3
+        column_width = max(len(name) for name in non_followers_list) + 4
+        
+        for i in range(0, len(non_followers_list), num_columns):
+            row_items = non_followers_list[i:i + num_columns]
+            print("".join(f"{item:<{column_width}}" for item in row_items))
+    else:
+        print(texts['no_one_great_job'])
 
-def find_file(filename, search_path):
-    for root, dirs, files in os.walk(search_path):
-        if filename in files:
-            return os.path.join(root, filename)
-    return None
 
 if __name__ == "__main__":
     selected_language = ''
-    texts_dict = InstagramAnalytics.TEXTS 
-    
+    texts_dict = InstagramAnalytics.TEXTS
     while True:
-        print(texts_dict['en']['language_prompt']) 
+        print(texts_dict['en']['language_prompt'])
         print("  1. English")
         print("  2. Português")
         choice = input("Enter your choice (1/2): ")
-        
-        if choice == '1':
-            selected_language = 'en'
-            break
-        elif choice == '2':
-            selected_language = 'pt'
+        if choice in ('1', '2'):
+            selected_language = 'en' if choice == '1' else 'pt'
             break
         else:
             print(texts_dict['en']['invalid_option'])
-            print("-" * 20)
-
+    
     texts = InstagramAnalytics.TEXTS[selected_language]
-    print(f"\n{texts['searching_files']}")
+
+    try:
+        script_directory = os.path.dirname(os.path.realpath(__file__))
+    except NameError:
+        script_directory = os.getcwd()
+
+    print(f"\n{texts['searching_files']} em '{script_directory}'...")
+
+    following_pattern = os.path.join(script_directory, '**', 'following.json')
+    followers_pattern = os.path.join(script_directory, '**', 'followers_*.json')
+
+    path_following_list = glob.glob(following_pattern, recursive=True)
+    followers_files = glob.glob(followers_pattern, recursive=True)
     
-    current_directory = os.getcwd()
-    path_following = find_file("following.json", current_directory)
-    path_followers = find_file("followers_1.json", current_directory)
-    
-    if not path_followers or not path_following:
+    path_following = path_following_list[0] if path_following_list else None
+
+    if not followers_files or not path_following:
         print(texts['files_not_found_msg'])
     else:
-        print(f"Found: {path_followers}")
-        print(f"Found: {path_following}\n")
-        
+        print(texts['files_found_msg'])
+        print(f"  - {path_following}")
+        for follower_file in followers_files:
+            print(f"  - {follower_file}")
+
         analytics = InstagramAnalytics(
-            following_file=path_following,
-            followers_file=path_followers,
+            following_filepath=path_following,
+            followers_filepaths=followers_files,
             language=selected_language
         )
-        analytics.print_analytics()
+        print_report(analytics)
