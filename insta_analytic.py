@@ -4,9 +4,6 @@ import glob
 from typing import Set, List, Dict, Any, Optional
 
 class InstagramAnalytics:
-    """
-    Analisa dados de seguidores e seguidos do Instagram a partir de arquivos JSON.
-    """
     TEXTS = {
         'pt': {
             'analysis_title': "--- Análise do Instagram ---",
