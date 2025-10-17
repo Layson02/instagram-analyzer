@@ -10,7 +10,7 @@ A command-line tool written in Python to analyze your Instagram data files (`fol
 * Displays a clean, formatted list of users who don't follow you back.
 * Interactive and supports multiple languages (English and Portuguese).
 
-## 📋 Prerequisites
+## 📋 Requirements
 
 To use this script, you first need to request your data from Instagram.
 
