@@ -1,0 +1,13 @@
+venv/
+*.env
+.env
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.vscode/
+.idea/
+
+Followers_and_following_suggestion_folder
